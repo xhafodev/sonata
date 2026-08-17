@@ -484,9 +484,17 @@ getgenv().Library = {
     end
 
     Library.GetTransparency = function(self, obj)
+        if type(obj) == "table" then
+            obj = obj.Instance
+        end
+
+        if typeof(obj) ~= "Instance" then
+            return nil
+        end
+
         local Instance = obj
 
-        if Instance:IsA("Frame") then
+        if Instance:IsA("Frame") or Instance:IsA("CanvasGroup") then
             return {"BackgroundTransparency"}
         elseif Instance:IsA("TextLabel") or Instance:IsA("TextButton") then
             return { "TextTransparency", "BackgroundTransparency" }
@@ -583,12 +591,19 @@ getgenv().Library = {
         local Children = Instance:GetDescendants()
         table.insert(Children, Instance)
 
-        if self.Blur then
-            table.insert(Children, self.Blur)
+        local BlurObject = rawget(self, "Blur")
+        if typeof(BlurObject) == "Instance" then
+            table.insert(Children, BlurObject)
+        elseif type(BlurObject) == "table" and typeof(BlurObject.Instance) == "Instance" then
+            table.insert(Children, BlurObject.Instance)
         end
 
         local FadingAnimation;
         for _,obj in Children do
+            if type(obj) == "table" and obj.Instance then
+                obj = obj.Instance
+            end
+
             local Index = Library:GetTransparency(obj)
 
             if not Index then
@@ -1813,7 +1828,6 @@ getgenv().Library = {
         local Info = {
             Instance = Instance.new(Class);
             Properties = Options;
-            Blur;
         }
 
         local Instance = Info.Instance
@@ -1935,7 +1949,7 @@ getgenv().Library = {
             coroutine.close(Value)
         end
 
-        local Items = {self.Items, self.Other, self.Blur, self.Elements, self.HUD}
+        local Items = {self.Items, self.Other, self.WorldBlur, self.Elements, self.HUD}
 
         for _, Item in Items do
             if Item then
@@ -2212,19 +2226,19 @@ getgenv().Library = {
 
         local Items = Cfg.Items; do
             Cfg.BlurSize = Data.BlurSize or 16
-            Cfg.ShadowPad = Data.ShadowPad or 48
-            Cfg.ShadowOffset = Data.ShadowOffset or 10
+            Cfg.ShadowPad = Data.ShadowPad or 40
+            Cfg.ShadowOffset = Data.ShadowOffset or 6
 
-            if not Library.Blur then
-                Library.Blur = Library:Create("BlurEffect", {
+            if not Library.WorldBlur then
+                Library.WorldBlur = Library:Create("BlurEffect", {
                     Name = "\0";
                     Parent = Services.Lighting;
                     Enabled = true;
                     Size = Cfg.Visible and Cfg.BlurSize or 0;
                 })
             else
-                Library.Blur.Instance.Size = Cfg.Visible and Cfg.BlurSize or 0
-                Library.Blur.Instance.Enabled = true
+                Library.WorldBlur.Instance.Size = Cfg.Visible and Cfg.BlurSize or 0
+                Library.WorldBlur.Instance.Enabled = true
             end
 
             Items.Shadow = Library:Create("ImageLabel", {
@@ -2237,6 +2251,7 @@ getgenv().Library = {
                 ScaleType = Enum.ScaleType.Slice;
                 SliceCenter = Rect.new(49, 49, 450, 450);
                 SliceScale = 1;
+                AnchorPoint = Vector2.new(0.5, 0.5);
                 ZIndex = 0;
                 Visible = true;
                 Size = Cfg.Size;
@@ -2282,18 +2297,23 @@ getgenv().Library = {
                 end
 
                 local Pad = Cfg.ShadowPad
-                local Offset = Cfg.ShadowOffset
-                local Pos = Menu.AbsolutePosition
+                local Drop = Cfg.ShadowOffset
                 local Size = Menu.AbsoluteSize
 
                 Shadow.Visible = Menu.Visible
-                Shadow.Position = UDim2.fromOffset(Pos.X - (Pad * 0.5), Pos.Y - (Pad * 0.5) + Offset)
                 Shadow.Size = UDim2.fromOffset(Size.X + Pad, Size.Y + Pad)
+                Shadow.Position = UDim2.new(
+                    Menu.Position.X.Scale,
+                    Menu.Position.X.Offset + (Size.X * 0.5),
+                    Menu.Position.Y.Scale,
+                    Menu.Position.Y.Offset + (Size.Y * 0.5) + Drop
+                )
             end
 
             Cfg.SyncShadow = SyncShadow
             Library:Connect(Items.Menu.Instance:GetPropertyChangedSignal("AbsolutePosition"), SyncShadow)
             Library:Connect(Items.Menu.Instance:GetPropertyChangedSignal("AbsoluteSize"), SyncShadow)
+            Library:Connect(Items.Menu.Instance:GetPropertyChangedSignal("Position"), SyncShadow)
             Library:Connect(Items.Menu.Instance:GetPropertyChangedSignal("Visible"), SyncShadow)
             task.defer(SyncShadow)
 
@@ -2915,14 +2935,14 @@ getgenv().Library = {
         end)
 
         function Cfg.SetWorldBlur(Bool)
-            if not (Library.Blur and Library.Blur.Instance) then
+            if not (Library.WorldBlur and Library.WorldBlur.Instance) then
                 return
             end
 
             Library:Tween(
                 { Size = Bool and (Cfg.BlurSize or 16) or 0 },
                 TweenInfo.new(Library.TweeningSpeed, Library.EasingStyle, Enum.EasingDirection.InOut),
-                Library.Blur.Instance
+                Library.WorldBlur.Instance
             )
         end
 
