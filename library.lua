@@ -1965,6 +1965,57 @@ getgenv().Library = {
         getgenv().Library = nil
     end
 
+    Library.KillBlur = function()
+        for _, Effect in Services.Lighting:GetChildren() do
+            if Effect:IsA("BlurEffect") or Effect:IsA("DepthOfFieldEffect") then
+                pcall(function()
+                    Effect.Enabled = false
+                    if Effect:IsA("BlurEffect") then
+                        Effect.Size = 0
+                    end
+                    Effect:Destroy()
+                end)
+            end
+        end
+
+        if Library.WorldBlur then
+            pcall(function()
+                if Library.WorldBlur.Instance then
+                    Library.WorldBlur.Instance:Destroy()
+                end
+            end)
+            Library.WorldBlur = nil
+        end
+    end
+
+    Library.KillBlur()
+
+    Library:Connect(Services.Lighting.ChildAdded, function(Child)
+        local Window = Library.Window
+        if not (Window and Window.Visible) then
+            return
+        end
+
+        if Child:IsA("BlurEffect") or Child:IsA("DepthOfFieldEffect") then
+            task.defer(function()
+                pcall(function()
+                    Child.Enabled = false
+                    if Child:IsA("BlurEffect") then
+                        Child.Size = 0
+                    end
+                    Child:Destroy()
+                end)
+            end)
+        end
+    end)
+
+    Library:Connect(Services.RunService.Heartbeat, function()
+        local Window = Library.Window
+        if Window and Window.Visible then
+            Library.KillBlur()
+        end
+    end)
+
     Library.Items = Library:Create( "ScreenGui" , {
         Parent = Services.CoreGui;
         Name = "\0";
@@ -2805,6 +2856,7 @@ getgenv().Library = {
             end
 
             Cfg.Visible = Bool
+            Library.KillBlur()
 
             if not Cfg.IsMobile then
                 Items.Menu:TweenDescendants(Bool, Cfg)
@@ -2847,6 +2899,7 @@ getgenv().Library = {
         end
 
         Library.Window = setmetatable(Cfg, Library)
+        Library.KillBlur()
 
         return Library.Window
     end
