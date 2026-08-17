@@ -3453,15 +3453,42 @@ getgenv().Library = {
             Cfg.Collapse(Cfg.Collapsed)
         end)
 
-        Cfg.UpdateSection = function(Instance)
-            task.spawn(function()
-                if not Cfg.Collapsed then
-                    Cfg.CachedSize += Instance.AbsoluteSize.Y + 13
-                    local Scale, Offset = GetScale()
-                    Items.Section:Tween({Size = UDim2.new(Scale, Offset, 0, Cfg.CachedSize + 40)})
+        Cfg.RecalcSection = function()
+            task.defer(function()
+                if Cfg.Collapsed then
+                    return
                 end
+
+                local Height = 0
+                for _, Child in Items.Elements.Instance:GetChildren() do
+                    if Child:IsA("GuiObject") and Child.Visible then
+                        Height += Child.AbsoluteSize.Y
+                    end
+                end
+
+                local VisibleCount = 0
+                for _, Child in Items.Elements.Instance:GetChildren() do
+                    if Child:IsA("GuiObject") and Child.Visible and Child.AbsoluteSize.Y > 0 then
+                        VisibleCount += 1
+                    end
+                end
+
+                if VisibleCount > 1 then
+                    Height += 13 * (VisibleCount - 1)
+                end
+
+                Height += 52
+                Cfg.CachedSize = math.max(Height - 40, 0)
+                local Scale, Offset = GetScale()
+                Items.Section.Instance.Size = UDim2.new(Scale, Offset, 0, math.max(40, Height))
             end)
         end
+
+        Cfg.UpdateSection = function()
+            Cfg.RecalcSection()
+        end
+
+        Library:Connect(Items.Elements.Instance:GetPropertyChangedSignal("AbsoluteSize"), Cfg.RecalcSection)
 
         do -- Drag rearrange / column swap
             local DragState = {
@@ -3933,6 +3960,64 @@ getgenv().Library = {
         return setmetatable(Cfg, Library)
     end
 
+    Library.GetControlInstance = function(self)
+        local Items = self.Items
+        if not Items then
+            return nil
+        end
+
+        local Object = Items.Object or Items.Dropdown or Items.List or Items.Outline or Items.ButtonHolder or Items.ColorpickerObject or Items.Slider
+        return Object and Object.Instance
+    end
+
+    Library.SetControlVisible = function(self, Bool)
+        local Inst = self:GetControlInstance()
+        if not Inst then
+            return
+        end
+
+        if Bool then
+            Inst.Visible = true
+            if self._RestSize then
+                Inst.Size = self._RestSize
+            end
+        else
+            if not self._RestSize then
+                self._RestSize = Inst.Size
+            end
+            Inst.Visible = false
+            Inst.Size = UDim2.new(1, 0, 0, 0)
+        end
+
+        local Section = self.Section
+        if Section and Section.RecalcSection then
+            Section.RecalcSection()
+        end
+    end
+
+    Library.HideUntilOn = function(self, Controls)
+        self.Dependents = Controls or {}
+
+        local function Sync(State)
+            for _, Control in self.Dependents do
+                if Control and Control.SetControlVisible then
+                    Control:SetControlVisible(State)
+                end
+            end
+        end
+
+        local OldSet = self.Set
+        if OldSet then
+            self.Set = function(Value)
+                OldSet(Value)
+                Sync(self.Enabled == nil and Value or self.Enabled)
+            end
+        end
+
+        Sync(self.Enabled)
+        return self
+    end
+
     Library.AddToggle = function(self, Data)
         Data = Data or {}
 
@@ -4082,6 +4167,7 @@ getgenv().Library = {
 
         Cfg.Page = self.Page or self
         Cfg.Tab = self.Tab
+        Cfg.Section = self
         return setmetatable(Cfg, Library)
     end
 
@@ -4222,6 +4308,7 @@ getgenv().Library = {
             Kind = "Slider";
             Instance = Items.Object.Instance;
         })
+        Cfg.Section = self
         return setmetatable(Cfg, Library)
     end
 
@@ -4639,6 +4726,7 @@ getgenv().Library = {
             })
         end
 
+        Cfg.Section = self
         return setmetatable(Cfg, Library)
     end
 
@@ -4949,6 +5037,7 @@ getgenv().Library = {
             Instance = Items.Object.Instance;
         })
 
+        Cfg.Section = self
         return setmetatable(Cfg, Library)
     end
 
@@ -5099,6 +5188,7 @@ getgenv().Library = {
             Instance = Items.Outline.Instance;
         })
 
+        Cfg.Section = self
         return setmetatable(Cfg, Library)
     end
 
@@ -5520,6 +5610,7 @@ getgenv().Library = {
             Instance = Items.Object.Instance;
         })
 
+        Cfg.Section = self
         return setmetatable(Cfg, Library)
     end
 
@@ -6024,10 +6115,14 @@ getgenv().Library = {
             Data = Data or {}
 
             local Cfg = {
-                Text = Data.Title or Data.Name or Data.Text or "Title";
-                Lifetime = Data.Lifetime or 4;
+                Text = Data.Text or Data.Title or Data.Name or "Title";
+                Lifetime = Data.Lifetime or Data.Duration or 4;
                 Items = {};
             }
+
+            if Data.Title and Data.Text then
+                Cfg.Text = tostring(Data.Title) .. " | " .. tostring(Data.Text)
+            end
 
             if not Library.NotifHolder then
                 Library.NotifHolder = Library:Create( "Frame", {
