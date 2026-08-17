@@ -72,6 +72,12 @@
     local LocalPlayer = cloneref(Services.Players.LocalPlayer)
     local GuiInset = Services.GuiService:GetGuiInset().Y
     local Mouse = cloneref(LocalPlayer:GetMouse())
+
+    for _, Effect in Services.Lighting:GetChildren() do
+        if Effect:IsA("BlurEffect") or Effect:IsA("DepthOfFieldEffect") then
+            Effect:Destroy()
+        end
+    end
 --
 
 if getgenv().Library and getgenv().Library.Unload then
@@ -2140,25 +2146,6 @@ getgenv().Library = {
         }
 
         local Items = Cfg.Items; do
-            Cfg.ShadowPad = Data.ShadowPad or 40
-            Cfg.ShadowOffset = Data.ShadowOffset or 6
-
-            Items.Shadow = Library:Create("ImageLabel", {
-                Parent = Library.Items.Instance;
-                BackgroundTransparency = 1;
-                BorderSizePixel = 0;
-                Image = "rbxassetid://6014261993";
-                ImageColor3 = Color3.fromRGB(0, 0, 0);
-                ImageTransparency = 0.38;
-                ScaleType = Enum.ScaleType.Slice;
-                SliceCenter = Rect.new(49, 49, 450, 450);
-                SliceScale = 1;
-                AnchorPoint = Vector2.new(0.5, 0.5);
-                ZIndex = 0;
-                Visible = true;
-                Size = Cfg.Size;
-            })
-
             Items.Menu = Library:Create( "Frame", {
                 AnchorPoint = Vector2.new(0.5, 0.5);
                 Parent = Library.Items.Instance;
@@ -2190,34 +2177,6 @@ getgenv().Library = {
                 Parent = Items.Menu.Instance;
                 Transparency = 0.5
             })
-
-            local SyncShadow = function()
-                local Menu = Items.Menu and Items.Menu.Instance
-                local Shadow = Items.Shadow and Items.Shadow.Instance
-                if not (Menu and Shadow) then
-                    return
-                end
-
-                local Pad = Cfg.ShadowPad
-                local Drop = Cfg.ShadowOffset
-                local Size = Menu.AbsoluteSize
-
-                Shadow.Visible = Menu.Visible
-                Shadow.Size = UDim2.fromOffset(Size.X + Pad, Size.Y + Pad)
-                Shadow.Position = UDim2.new(
-                    Menu.Position.X.Scale,
-                    Menu.Position.X.Offset + (Size.X * 0.5),
-                    Menu.Position.Y.Scale,
-                    Menu.Position.Y.Offset + (Size.Y * 0.5) + Drop
-                )
-            end
-
-            Cfg.SyncShadow = SyncShadow
-            Library:Connect(Items.Menu.Instance:GetPropertyChangedSignal("AbsolutePosition"), SyncShadow)
-            Library:Connect(Items.Menu.Instance:GetPropertyChangedSignal("AbsoluteSize"), SyncShadow)
-            Library:Connect(Items.Menu.Instance:GetPropertyChangedSignal("Position"), SyncShadow)
-            Library:Connect(Items.Menu.Instance:GetPropertyChangedSignal("Visible"), SyncShadow)
-            task.defer(SyncShadow)
 
             Items.SideBar = Library:Create( "Frame", {
                 Parent = Items.Menu.Instance;
@@ -2836,34 +2795,6 @@ getgenv().Library = {
             Items.Title.Instance.Text = string.format("sonata.dev | %s | %s | Build: developer", tostring(FPS), Time)
         end)
 
-        function Cfg.SetShadowVisible(Bool)
-            local Shadow = Items.Shadow and Items.Shadow.Instance
-            if not Shadow then
-                return
-            end
-
-            if Bool then
-                Shadow.Visible = true
-                if Cfg.SyncShadow then
-                    Cfg.SyncShadow()
-                end
-            end
-
-            local Tween = Library:Tween(
-                { ImageTransparency = Bool and 0.38 or 1 },
-                TweenInfo.new(Library.TweeningSpeed, Library.EasingStyle, Enum.EasingDirection.InOut),
-                Shadow
-            )
-
-            if Tween and not Bool then
-                Library:Connect(Tween.Completed, function()
-                    if not Cfg.Visible then
-                        Shadow.Visible = false
-                    end
-                end)
-            end
-        end
-
         function Cfg.SetVisible(Bool)
             if Bool == nil then
                 Bool = not Cfg.Visible
@@ -2874,7 +2805,6 @@ getgenv().Library = {
             end
 
             Cfg.Visible = Bool
-            Cfg.SetShadowVisible(Bool)
 
             if not Cfg.IsMobile then
                 Items.Menu:TweenDescendants(Bool, Cfg)
