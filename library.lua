@@ -3,8 +3,6 @@
         return Object
     end
 
-    local game = cloneref(game)
-
     local ServiceCache = {};
     getgenv().Services = setmetatable({}, {__index = function(Self, Index)
         if not ServiceCache[Index] then
@@ -94,7 +92,6 @@ getgenv().Library = {
     ConfigFlags = {};
     Connections = {};
     Threads = {};
-    Blurs = {};
     Notifications = {Notifs = {}};
     Keybinds = {};
     Mods = {};
@@ -597,13 +594,6 @@ getgenv().Library = {
 
         local Children = Instance:GetDescendants()
         table.insert(Children, Instance)
-
-        local BlurObject = rawget(self, "Blur")
-        if typeof(BlurObject) == "Instance" then
-            table.insert(Children, BlurObject)
-        elseif type(BlurObject) == "table" and typeof(BlurObject.Instance) == "Instance" then
-            table.insert(Children, BlurObject.Instance)
-        end
 
         local FadingAnimation;
         for _,obj in Children do
@@ -1831,72 +1821,6 @@ getgenv().Library = {
         self.Connection:Disconnect()
     end
 
-    local CustomAssetCache = {}
-
-    Library.GetCustomAsset = function(self, Image)
-        if type(Image) ~= "string" or Image == "" then
-            return Image
-        end
-
-        if CustomAssetCache[Image] then
-            return CustomAssetCache[Image]
-        end
-
-        if string.sub(Image, 1, 11) == "rbxasset://" then
-            CustomAssetCache[Image] = Image
-            return Image
-        end
-
-        local Resolve = getcustomasset
-        if not Resolve then
-            CustomAssetCache[Image] = Image
-            return Image
-        end
-
-        if isfile and isfile(Image) then
-            local Ok, Asset = pcall(Resolve, Image)
-            if Ok and Asset then
-                CustomAssetCache[Image] = Asset
-                return Asset
-            end
-        end
-
-        local Id = string.match(Image, "rbxassetid://(%d+)") or string.match(Image, "^(%d+)$")
-        if Id then
-            local Folder = Library.Directory .. "/Assets"
-            if makefolder then
-                if not isfolder(Library.Directory) then
-                    makefolder(Library.Directory)
-                end
-                if not isfolder(Folder) then
-                    makefolder(Folder)
-                end
-            end
-
-            local Path = Folder .. "/" .. Id
-            if isfile and not isfile(Path) and writefile then
-                local Body
-                local Ok = pcall(function()
-                    Body = game:HttpGet("https://assetdelivery.roblox.com/v1/asset/?id=" .. Id)
-                end)
-                if Ok and type(Body) == "string" and #Body > 0 then
-                    writefile(Path, Body)
-                end
-            end
-
-            if isfile and isfile(Path) then
-                local Ok, Asset = pcall(Resolve, Path)
-                if Ok and Asset then
-                    CustomAssetCache[Image] = Asset
-                    return Asset
-                end
-            end
-        end
-
-        CustomAssetCache[Image] = Image
-        return Image
-    end
-
     Library.Create = function(self, Class, Options)
         local Info = {
             Instance = Instance.new(Class);
@@ -1906,9 +1830,6 @@ getgenv().Library = {
         local Instance = Info.Instance
 
         for Property, Value in Info.Properties do
-            if (Property == "Image" or Property == "MidImage" or Property == "TopImage" or Property == "BottomImage") and type(Value) == "string" then
-                Value = Library:GetCustomAsset(Value)
-            end
             Instance[Property] = Value
         end
 
@@ -2036,22 +1957,6 @@ getgenv().Library = {
 
         Library = nil
         getgenv().Library = nil
-    end
-
-    Library.GetCalculatePosition = function(self, Position, Normal, Origin, Direction)
-        local n = Normal;
-        local d = Direction;
-        local v = Origin - Position;
-
-        local num = (n.x * v.x) + (n.y * v.y) + (n.z * v.z); -- Dot exists for vector3.new too lazy to test
-        local den = (n.x * d.x) + (n.y * d.y) + (n.z * d.z);
-        local a = -num / den;
-
-        return Origin + (a * Direction);
-    end;
-
-    Library.Blurify = function(self)
-        return self
     end
 
     Library.Items = Library:Create( "ScreenGui" , {
@@ -2189,7 +2094,10 @@ getgenv().Library = {
         end
 
         if isfile(Path) and getcustomasset then
-            return Library:GetCustomAsset(Path)
+            local Ok, Asset = pcall(getcustomasset, Path)
+            if Ok and Asset then
+                return Asset
+            end
         end
     end
 
@@ -2199,7 +2107,19 @@ getgenv().Library = {
         local Self = self
 
         local ResolveImage = function(Image)
-            return Library:GetCustomAsset(Image)
+            if type(Image) ~= "string" or Image == "" then
+                return "rbxassetid://98083086936965"
+            end
+
+            if string.find(Image, "rbxasset", 1, true) then
+                return Image
+            end
+
+            if getcustomasset and isfile(Image) then
+                return getcustomasset(Image)
+            end
+
+            return Image
         end
 
         local Cfg = {
