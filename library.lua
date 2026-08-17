@@ -485,28 +485,33 @@ getgenv().Library = {
 
     Library.GetTransparency = function(self, obj)
         if type(obj) == "table" then
-            obj = obj.Instance
+            obj = rawget(obj, "Instance") or obj.Instance
         end
 
         if typeof(obj) ~= "Instance" then
             return nil
         end
 
-        local Instance = obj
+        local ok, className = pcall(function()
+            return obj.ClassName
+        end)
+        if not ok or type(className) ~= "string" then
+            return nil
+        end
 
-        if Instance:IsA("Frame") or Instance:IsA("CanvasGroup") then
+        if className == "Frame" or className == "CanvasGroup" then
             return {"BackgroundTransparency"}
-        elseif Instance:IsA("TextLabel") or Instance:IsA("TextButton") then
+        elseif className == "TextLabel" or className == "TextButton" then
             return { "TextTransparency", "BackgroundTransparency" }
-        elseif Instance:IsA("ImageLabel") or Instance:IsA("ImageButton") then
+        elseif className == "ImageLabel" or className == "ImageButton" then
             return { "BackgroundTransparency", "ImageTransparency" }
-        elseif Instance:IsA("ScrollingFrame") then
+        elseif className == "ScrollingFrame" then
             return { "BackgroundTransparency", "ScrollBarImageTransparency" }
-        elseif Instance:IsA("TextBox") then
+        elseif className == "TextBox" then
             return { "BackgroundTransparency" }
-        elseif Instance:IsA("UIStroke") then
+        elseif className == "UIStroke" then
             return { "Transparency" }
-        elseif Instance:IsA("BasePart") then
+        elseif obj:IsA("BasePart") then
             return { "Transparency" }
         end
 
