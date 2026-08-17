@@ -3,6 +3,8 @@
         return Object
     end
 
+    local game = cloneref(game)
+
     local ServiceCache = {};
     getgenv().Services = setmetatable({}, {__index = function(Self, Index)
         if not ServiceCache[Index] then
@@ -1829,6 +1831,72 @@ getgenv().Library = {
         self.Connection:Disconnect()
     end
 
+    local CustomAssetCache = {}
+
+    Library.GetCustomAsset = function(self, Image)
+        if type(Image) ~= "string" or Image == "" then
+            return Image
+        end
+
+        if CustomAssetCache[Image] then
+            return CustomAssetCache[Image]
+        end
+
+        if string.sub(Image, 1, 11) == "rbxasset://" then
+            CustomAssetCache[Image] = Image
+            return Image
+        end
+
+        local Resolve = getcustomasset
+        if not Resolve then
+            CustomAssetCache[Image] = Image
+            return Image
+        end
+
+        if isfile and isfile(Image) then
+            local Ok, Asset = pcall(Resolve, Image)
+            if Ok and Asset then
+                CustomAssetCache[Image] = Asset
+                return Asset
+            end
+        end
+
+        local Id = string.match(Image, "rbxassetid://(%d+)") or string.match(Image, "^(%d+)$")
+        if Id then
+            local Folder = Library.Directory .. "/Assets"
+            if makefolder then
+                if not isfolder(Library.Directory) then
+                    makefolder(Library.Directory)
+                end
+                if not isfolder(Folder) then
+                    makefolder(Folder)
+                end
+            end
+
+            local Path = Folder .. "/" .. Id
+            if isfile and not isfile(Path) and writefile then
+                local Body
+                local Ok = pcall(function()
+                    Body = game:HttpGet("https://assetdelivery.roblox.com/v1/asset/?id=" .. Id)
+                end)
+                if Ok and type(Body) == "string" and #Body > 0 then
+                    writefile(Path, Body)
+                end
+            end
+
+            if isfile and isfile(Path) then
+                local Ok, Asset = pcall(Resolve, Path)
+                if Ok and Asset then
+                    CustomAssetCache[Image] = Asset
+                    return Asset
+                end
+            end
+        end
+
+        CustomAssetCache[Image] = Image
+        return Image
+    end
+
     Library.Create = function(self, Class, Options)
         local Info = {
             Instance = Instance.new(Class);
@@ -1838,6 +1906,9 @@ getgenv().Library = {
         local Instance = Info.Instance
 
         for Property, Value in Info.Properties do
+            if (Property == "Image" or Property == "MidImage" or Property == "TopImage" or Property == "BottomImage") and type(Value) == "string" then
+                Value = Library:GetCustomAsset(Value)
+            end
             Instance[Property] = Value
         end
 
@@ -1954,7 +2025,7 @@ getgenv().Library = {
             coroutine.close(Value)
         end
 
-        local Items = {self.Items, self.Other, self.WorldBlur, self.Elements, self.HUD}
+        local Items = {self.Items, self.Other, self.Elements, self.HUD}
 
         for _, Item in Items do
             if Item then
@@ -1979,73 +2050,7 @@ getgenv().Library = {
         return Origin + (a * Direction);
     end;
 
-    Library.Blurify = function(self, Strength)
-        Strength = Strength or 0.97
-
-        local Instance = self.Instance
-        self.Strength = Strength
-        Library.Blurs[#Library.Blurs + 1] = self
-        local Part = Library:Create("Part", {
-            Material = Enum.Material.Glass;
-            Transparency = Strength;
-            Reflectance = 1;
-            CastShadow = false;
-            Anchored = true;
-            CanCollide = false;
-            CanQuery = false;
-            CollisionGroup = " ";
-            Size = Vector3.new(1, 1, 1) * 0.01;
-            Color = Color3.fromRGB(0,0,0);
-            Parent = Camera,
-        });
-
-        local BlockMesh = Library:Create("BlockMesh", {
-            Parent = Part.Instance;
-        })
-
-        local DepthOfField = Library:Create("DepthOfFieldEffect", {
-            Parent = Services.Lighting;
-            Enabled = true;
-            FarIntensity = 0;
-            FocusDistance = 0;
-            InFocusRadius = 1000;
-            NearIntensity = 1;
-            Name = ""
-        })
-
-        Library:Connect(Services.RunService.RenderStepped, function()
-            if not self.Instance.Visible then
-                Part.Transparency = 1
-                Part.Instance.CFrame = CFrame.new(0/0, 9e9, 9e9)
-                return
-            end
-
-            local Corner0 = Instance.AbsolutePosition;
-            local Corner1 = Corner0 + Instance.AbsoluteSize;
-
-            local Ray0 = Workspace.CurrentCamera.ScreenPointToRay(Workspace.CurrentCamera,Corner0.X, Corner0.Y, 1);
-            local Ray1 = Workspace.CurrentCamera.ScreenPointToRay(Workspace.CurrentCamera,Corner1.X, Corner1.Y, 1);
-
-            local Origin = Workspace.CurrentCamera.CFrame.Position + Workspace.CurrentCamera.CFrame.LookVector * (0.05 - Workspace.CurrentCamera.NearPlaneZ);
-
-            local Normal = Workspace.CurrentCamera.CFrame.LookVector;
-
-            local Pos0 = Library:GetCalculatePosition(Origin, Normal, Ray0.Origin, Ray0.Direction);
-            local Pos1 = Library:GetCalculatePosition(Origin, Normal, Ray1.Origin, Ray1.Direction);
-
-            Pos0 = Workspace.CurrentCamera.CFrame:PointToObjectSpace(Pos0);
-            Pos1 = Workspace.CurrentCamera.CFrame:PointToObjectSpace(Pos1);
-
-            local Size = Pos1 - Pos0;
-            local Center = (Pos0 + Pos1) / 2;
-
-            BlockMesh.Instance.Offset = Center
-            BlockMesh.Instance.Scale  = Size / 0.0101;
-
-            Part.Instance.CFrame = Workspace.CurrentCamera.CFrame;
-            Part.Instance.Transparency = self.Strength
-        end)
-
+    Library.Blurify = function(self)
         return self
     end
 
@@ -2184,10 +2189,7 @@ getgenv().Library = {
         end
 
         if isfile(Path) and getcustomasset then
-            local Ok, Asset = pcall(getcustomasset, Path)
-            if Ok and Asset then
-                return Asset
-            end
+            return Library:GetCustomAsset(Path)
         end
     end
 
@@ -2197,19 +2199,7 @@ getgenv().Library = {
         local Self = self
 
         local ResolveImage = function(Image)
-            if type(Image) ~= "string" or Image == "" then
-                return "rbxassetid://98083086936965"
-            end
-
-            if string.find(Image, "rbxasset", 1, true) then
-                return Image
-            end
-
-            if getcustomasset and isfile(Image) then
-                return getcustomasset(Image)
-            end
-
-            return Image
+            return Library:GetCustomAsset(Image)
         end
 
         local Cfg = {
@@ -2230,21 +2220,8 @@ getgenv().Library = {
         }
 
         local Items = Cfg.Items; do
-            Cfg.BlurSize = Data.BlurSize or 16
             Cfg.ShadowPad = Data.ShadowPad or 40
             Cfg.ShadowOffset = Data.ShadowOffset or 6
-
-            if not Library.WorldBlur then
-                Library.WorldBlur = Library:Create("BlurEffect", {
-                    Name = "\0";
-                    Parent = Services.Lighting;
-                    Enabled = true;
-                    Size = Cfg.Visible and Cfg.BlurSize or 0;
-                })
-            else
-                Library.WorldBlur.Instance.Size = Cfg.Visible and Cfg.BlurSize or 0
-                Library.WorldBlur.Instance.Enabled = true
-            end
 
             Items.Shadow = Library:Create("ImageLabel", {
                 Parent = Library.Items.Instance;
@@ -2939,18 +2916,6 @@ getgenv().Library = {
             Items.Title.Instance.Text = string.format("sonata.dev | %s | %s | Build: developer", tostring(FPS), Time)
         end)
 
-        function Cfg.SetWorldBlur(Bool)
-            if not (Library.WorldBlur and Library.WorldBlur.Instance) then
-                return
-            end
-
-            Library:Tween(
-                { Size = Bool and (Cfg.BlurSize or 16) or 0 },
-                TweenInfo.new(Library.TweeningSpeed, Library.EasingStyle, Enum.EasingDirection.InOut),
-                Library.WorldBlur.Instance
-            )
-        end
-
         function Cfg.SetShadowVisible(Bool)
             local Shadow = Items.Shadow and Items.Shadow.Instance
             if not Shadow then
@@ -2989,7 +2954,6 @@ getgenv().Library = {
             end
 
             Cfg.Visible = Bool
-            Cfg.SetWorldBlur(Bool)
             Cfg.SetShadowVisible(Bool)
 
             if not Cfg.IsMobile then
